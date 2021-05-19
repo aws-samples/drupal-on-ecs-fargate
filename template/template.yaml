@@ -1,0 +1,753 @@
+Description: Template to deploy Drupal application on EFS using ECS Fargate
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Network Configuration"
+        Parameters: 
+          - VpcCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+          - PrivateSubnet3CIDR
+      - 
+        Label: 
+          default: "ECS cluster Configuration"
+        Parameters: 
+          - ClusterName
+          - Image
+          - MinCapacity
+          - MaxCapacity
+      - 
+        Label: 
+          default: "Aurora MySQL Configuration"
+        Parameters: 
+          - DBAdminUsername
+          - DBPassword
+      - 
+        Label: 
+          default: "EFS Configuration"
+        Parameters: 
+          - PerformanceMode
+          - EfsProvisionedThroughputInMibps
+          - ThroughputMode
+      - 
+        Label:
+          default: "Tagging Configuration"
+        Parameters:
+          - EnvironmentName
+
+Parameters:
+  ClusterName:
+    Type: String 
+    Description: Name for Aurora Cluster DB and EFS. 
+    Default: drupalonefs
+  Image:
+    Type: String
+    Default: "drupal:8-apache"
+    Description: Drupal Image for the ECS service. 
+  MinCapacity:
+    Description: Minimum Fargate tasks to run
+    Type: Number
+    Default: 1
+  MaxCapacity:
+    Description: Maximum Fargate tasks to scale
+    Type: Number
+    Default: 5
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: test
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.11.0/24
+  PublicSubnet3CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.12.0/24
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
+  PrivateSubnet3CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.22.0/24
+  DBAdminUsername:
+    Description: Please enter a username for the Aurora DB that will be created as part of this stack. 
+    Type: String
+    Default: admin
+  DBPassword:
+    NoEcho: true
+    Description: Please enter a password for the Aurora DB that will be created as part of this stack. 
+    Type: String
+    MinLength: 8
+    MaxLength: 41
+  PerformanceMode:
+    Type: String
+    AllowedValues: [ generalPurpose, maxIO ]
+    Default: generalPurpose
+  EfsProvisionedThroughputInMibps:
+    Type: Number
+    MinValue: 0
+    MaxValue: 1024
+    Default: 0
+  ThroughputMode:
+    Type: String
+    AllowedValues: [ bursting, provisioned ]
+    Default: bursting
+Rules:
+  ProvisionedThroughput:
+    RuleCondition: !Equals [ !Ref ThroughputMode, provisioned ]
+    Assertions:
+      - Assert: !Not [ !Equals [ '0', !Ref EfsProvisionedThroughputInMibps ] ]
+        AssertDescription: "EfsProvisionedThroughputInMibps must be greater than 0 when ThroughputMode is provisioned"
+  BurstingThroughput:
+    RuleCondition: !Equals [ !Ref ThroughputMode, bursting ]
+    Assertions:
+      - Assert:  !Equals [ '0', !Ref EfsProvisionedThroughputInMibps ]
+        AssertDescription: "EfsProvisionedThroughputInMibps must be 0 when ThroughputMode is bursting"
+Conditions:
+  IsProvisioned:
+    !Equals [ !Ref ThroughputMode, provisioned ]
+  
+Resources:
+  #VPC resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+  
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs  '' ]
+      CidrBlock: !Ref PublicSubnet3CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ3)
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ3)
+
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  
+  NatGateway3EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+
+  NatGateway3:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway3EIP.AllocationId
+      SubnetId: !Ref PublicSubnet3
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet3
+
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ2)
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+  
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ3)
+
+  DefaultPrivateRoute3:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway3
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      SubnetId: !Ref PrivateSubnet3
+
+  #DB Resources
+  DrupalDBSubnetGroupName:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "DrupalDB SubnetGroupName"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+
+  DrupalDBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Enable DB access via port 3306"
+      GroupName: "Drupal DB SG"
+      SecurityGroupIngress:
+        - CidrIp: !Ref VpcCIDR
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+      VpcId: !Ref VPC
+
+  DrupalDB:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DatabaseName: drupal
+      DBClusterIdentifier: drupal-db-aurora-serverless
+      DBSubnetGroupName: !Ref DrupalDBSubnetGroupName
+      Engine: aurora-mysql
+      EngineMode: serverless
+      MasterUsername: !Ref DBAdminUsername
+      MasterUserPassword: !Ref DBPassword
+      VpcSecurityGroupIds:
+        - !Ref DrupalDBSG
+
+  #EFS Resources
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Enable EFS access via port 2049"
+      GroupName: "Drupal EFS SG"
+      SecurityGroupIngress:
+        - CidrIp: !Ref VpcCIDR
+          IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+      VpcId: !Ref VPC
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: !Ref PerformanceMode
+      ProvisionedThroughputInMibps: !If [ IsProvisioned, !Ref EfsProvisionedThroughputInMibps, !Ref 'AWS::NoValue' ]
+      ThroughputMode: !Ref ThroughputMode
+      FileSystemTags:
+        - Key: Name
+          Value: !Ref ClusterName
+  MountTargetPrivateSubnet1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SecurityGroups: [ !Ref EFSSecurityGroup ]
+      SubnetId: !Ref PrivateSubnet1
+  MountTargetPrivateSubnet2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SecurityGroups: [ !Ref EFSSecurityGroup ]
+      SubnetId: !Ref PrivateSubnet2
+  MountTargetPrivateSubnet3:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SecurityGroups: [ !Ref EFSSecurityGroup ]
+      SubnetId: !Ref PrivateSubnet3
+  AccessPointSites:
+      Type: 'AWS::EFS::AccessPoint'
+      Properties:
+        AccessPointTags: 
+          - Key: "Name"
+            Value: "sites"
+        FileSystemId: !Ref EFSFileSystem
+        RootDirectory:
+          CreationInfo:
+            OwnerGid: "33"
+            OwnerUid: "33"
+            Permissions: "0755"
+          Path: "/sites"  
+  AccessPointModules:
+      Type: 'AWS::EFS::AccessPoint'
+      Properties:
+        AccessPointTags: 
+          - Key: "Name"
+            Value: "modules"    
+        FileSystemId: !Ref EFSFileSystem
+        RootDirectory:
+          CreationInfo:
+            OwnerGid: "33"
+            OwnerUid: "33"
+            Permissions: "0755"
+          Path: "/modules"  
+  AccessPointThemes:
+      Type: 'AWS::EFS::AccessPoint'
+      Properties:
+        AccessPointTags: 
+          - Key: "Name"
+            Value: "themes"   
+        FileSystemId: !Ref EFSFileSystem
+        RootDirectory:
+          CreationInfo:
+            OwnerGid: "33"
+            OwnerUid: "33"
+            Permissions: "0755"
+          Path: "/themes"  
+  AccessPointProfiles:
+      Type: 'AWS::EFS::AccessPoint'
+      Properties:
+        AccessPointTags: 
+          - Key: "Name"
+            Value: "profiles"     
+        FileSystemId: !Ref EFSFileSystem
+        RootDirectory:
+          CreationInfo:
+            OwnerGid: "33"
+            OwnerUid: "33"
+            Permissions: "0755"
+          Path: "/profiles"   
+                                       
+  #ECS Resources
+  cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Join ['-', [!Ref ClusterName, Cluster]] 
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref ClusterName, ExecutionRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref ClusterName, AutoScalingRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole'
+
+  AutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: !Ref MinCapacity
+      MaxCapacity: !Ref MaxCapacity
+      ResourceId: !Join ['/', [service, !Ref cluster, !GetAtt service.Name]]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  AutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Join ['', [!Ref ClusterName, AutoScalingPolicy]]
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 10
+        ScaleOutCooldown: 10
+        # Keep things at or lower than 50% CPU utilization, for example
+        TargetValue: 75
+
+  service:
+    Type: AWS::ECS::Service
+    DependsOn: 
+    - listener
+    Properties:
+      ServiceName: !Join ['-',[!Ref ClusterName, service]]
+      Cluster: !Ref cluster
+      TaskDefinition: !Ref taskdefinition
+      EnableExecuteCommand: true
+      DeploymentConfiguration:
+          MinimumHealthyPercent: 100
+          MaximumPercent: 200
+      DesiredCount: !Ref MinCapacity
+      LaunchType: FARGATE
+      NetworkConfiguration: 
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+            - !Ref PrivateSubnet3
+          SecurityGroups:
+            - !Ref containersecuritygroup
+      LoadBalancers:
+        - ContainerName: "drupal"
+          ContainerPort: 80
+          TargetGroupArn: !Ref targetgroup
+    
+  targetgroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: loadbalancer
+    Properties:
+      TargetGroupAttributes:
+      - Key: stickiness.enabled
+        Value: "true"
+      - Key: stickiness.type
+        Value: lb_cookie 
+      HealthCheckIntervalSeconds: 60
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 30
+      UnhealthyThresholdCount: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200,302"
+      Name: !Join ['-', [!Ref ClusterName, TargetGroup]]
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+  listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref targetgroup
+          Type: forward
+      LoadBalancerArn: !Ref loadbalancer
+      Port: 80
+      Protocol: HTTP
+
+  loadbalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Join ['-', [!Ref ClusterName, LoadBalancer]]
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref albsecuritygroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+
+
+  containersecuritygroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Join ['-', [!Ref ClusterName, ContainerSecurityGroup]]
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref albsecuritygroup
+  albsecuritygroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Join ['-', [!Ref ClusterName, LoadBalancerSecurityGroup]]
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', [/ecs/, !Ref ClusterName, taskdefinition]]
+
+  taskdefinition: 
+    Type: AWS::ECS::TaskDefinition
+    Properties: 
+      RequiresCompatibilities:
+        - "EC2"
+        - "FARGATE"
+      Family: !Join ["-",[!Ref ClusterName,td]]
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: "arn:aws:iam::099162241086:role/ecstaskrole"
+      ContainerDefinitions:
+        -
+          EntryPoint:
+            - "sh"
+            - "-c"
+            - "cp -prR /var/www/html/sites/* /mnt"
+          Essential: false
+          Image: !Ref Image
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+          MountPoints:
+            - 
+              ContainerPath: "/mnt"
+              SourceVolume: "sites"
+          Name: "initcontainer"
+        -
+          DependsOn:
+            -
+              Condition: "COMPLETE"
+              ContainerName: "initcontainer"
+          Essential: true
+          Image: "drupal:8-apache"
+          MountPoints:
+            -
+              ContainerPath: "/var/www/html/modules/"
+              SourceVolume: "modules"
+            
+            - 
+              ContainerPath: "/var/www/html/sites/"
+              SourceVolume: "sites"
+
+            - 
+              ContainerPath: "/var/www/html/profiles/"
+              SourceVolume: "profiles"
+
+            - 
+              ContainerPath: "/var/www/html/themes/"
+              SourceVolume: "themes"
+          Name: "drupal"
+          PortMappings:
+            -
+              ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+
+      Cpu: "512"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      Volumes:
+        - 
+          Name: themes
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFSFileSystem
+            AuthorizationConfig:
+              IAM: DISABLED
+              AccessPointId: !Ref AccessPointThemes
+            TransitEncryption: ENABLED
+            RootDirectory: "/"
+          
+        
+        -
+          Name: profiles
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFSFileSystem
+            AuthorizationConfig:
+              IAM: DISABLED
+              AccessPointId: !Ref AccessPointProfiles
+            TransitEncryption: ENABLED
+            RootDirectory: "/"
+          
+
+        -
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFSFileSystem
+            AuthorizationConfig:
+              IAM: DISABLED
+              AccessPointId: !Ref AccessPointSites
+            TransitEncryption: ENABLED
+            RootDirectory: "/"
+          Name: sites
+
+        -
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFSFileSystem
+            AuthorizationConfig:
+              IAM: DISABLED
+              AccessPointId: !Ref AccessPointModules
+            TransitEncryption: ENABLED
+            RootDirectory: "/"
+          Name: modules
+
+
+Outputs:
+  ALBEndpoint:
+    Description: "ALB endpoint"
+    Value: 
+      !GetAtt loadbalancer.DNSName
+  DBEndpoint:
+    Description: "DB endpoint"
+    Value: 
+      !GetAtt DrupalDB.Endpoint.Address
