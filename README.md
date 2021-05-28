@@ -18,9 +18,9 @@ The following resources are created by the CFN template.
 
 - An Aurora MySQL compatible serverless DB in each private subnet.
 
+
 ![](images/architecture_diagram.png)
 
----
 
 ## Deploying the CloudFormation Stacks
 
@@ -35,13 +35,11 @@ git clone https://github.com/aws-samples/drupal-on-ecs-using-efs
 
 Delete the deployed CFN stack from an AWS Cloudformation console to delete all the resources created by the stack. 
 
----
 
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
----
 
 ## License
 
