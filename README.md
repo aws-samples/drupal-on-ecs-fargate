@@ -29,7 +29,6 @@ Clone the repository and deploy the solution from an AWS Cloudformation console 
 git clone https://github.com/aws-samples/drupal-on-ecs-using-efs
 ```
 
----
 
 ## Cleanup:
 
