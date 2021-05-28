@@ -26,7 +26,7 @@ The following resources are created by the CFN template.
 
 Clone the repository and deploy the solution from an AWS Cloudformation console using the cloned main.yaml file.
 ```
-git clone https://github.com/aws-samples/drupal-on-ecs-using-efs
+git clone https://github.com/aws-samples/drupal-on-ecs-fargate
 ```
 
 
