@@ -676,7 +676,7 @@ Resources:
         - "FARGATE"
       Family: !Join ["-",[!Ref ClusterName,td]]
       ExecutionRoleArn: !GetAtt ExecutionRole.Arn
-      TaskRoleArn: "arn:aws:iam::099162241086:role/ecstaskrole"
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         -
           EntryPoint:
