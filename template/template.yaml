@@ -746,7 +746,7 @@ Resources:
           EFSVolumeConfiguration:
             FilesystemId: !Ref EFSFileSystem
             AuthorizationConfig:
-              IAM: DISABLED
+              IAM: ENABLED
               AccessPointId: !Ref AccessPointProfiles
             TransitEncryption: ENABLED
             RootDirectory: "/"
@@ -756,7 +756,7 @@ Resources:
           EFSVolumeConfiguration:
             FilesystemId: !Ref EFSFileSystem
             AuthorizationConfig:
-              IAM: DISABLED
+              IAM: ENABLED
               AccessPointId: !Ref AccessPointSites
             TransitEncryption: ENABLED
             RootDirectory: "/"
@@ -766,7 +766,7 @@ Resources:
           EFSVolumeConfiguration:
             FilesystemId: !Ref EFSFileSystem
             AuthorizationConfig:
-              IAM: DISABLED
+              IAM: ENABLED
               AccessPointId: !Ref AccessPointModules
             TransitEncryption: ENABLED
             RootDirectory: "/"
