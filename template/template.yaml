@@ -405,6 +405,15 @@ Resources:
     Properties:
       Encrypted: true
       PerformanceMode: !Ref PerformanceMode
+      FileSystemPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientWrite
+            Principal:
+                AWS: !GetAtt ECSTaskRole.Arn
       ProvisionedThroughputInMibps: !If [ IsProvisioned, !Ref EfsProvisionedThroughputInMibps, !Ref 'AWS::NoValue' ]
       ThroughputMode: !Ref ThroughputMode
       FileSystemTags:
@@ -503,6 +512,28 @@ Resources:
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
         
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-',[!Ref ClusterName, TaskRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                 - elasticfilesystem:ClientMount
+                 - elasticfilesystem:ClientWrite
+                Resource: '*'
+              
+      
   AutoScalingRole:
     Type: AWS::IAM::Role
     Properties:
