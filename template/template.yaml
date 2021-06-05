@@ -410,7 +410,7 @@ Resources:
         Statement:
           - Effect: "Allow"
             Action:
-              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientRootAccess
               - elasticfilesystem:ClientWrite
             Principal:
                 AWS: !GetAtt ECSTaskRole.Arn
@@ -529,7 +529,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: 
-                 - elasticfilesystem:ClientMount
+                 - elasticfilesystem:ClientRootAccess
                  - elasticfilesystem:ClientWrite
                 Resource: '*'
               
