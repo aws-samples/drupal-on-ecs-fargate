@@ -23,10 +23,12 @@ Metadata:
           - MaxCapacity
       - 
         Label: 
-          default: "Aurora MySQL Configuration"
+          default: "Amazon Aurora Serverless MySQL DB Configuration"
         Parameters: 
           - DBAdminUsername
           - DBPassword
+          - MinimumAuroraCapacityUnit
+          - MaximumAuroraCapacityUnit
       - 
         Label: 
           default: "EFS Configuration"
@@ -60,7 +62,7 @@ Parameters:
   EnvironmentName:
     Description: An environment name that is prefixed to resource names
     Type: String
-    Default: test
+    Default: Test
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
     Type: String
@@ -99,6 +101,14 @@ Parameters:
     Type: String
     MinLength: 8
     MaxLength: 41
+  MinimumAuroraCapacityUnit:
+    Description: Minimum Aurora capacity unit
+    Type: Number
+    Default: 1
+  MaximumAuroraCapacityUnit:
+    Description: Maximum Aurora capacity unit
+    Type: Number
+    Default: 16    
   PerformanceMode:
     Type: String
     AllowedValues: [ generalPurpose, maxIO ]
@@ -387,6 +397,11 @@ Resources:
       MasterUserPassword: !Ref DBPassword
       VpcSecurityGroupIds:
         - !Ref DrupalDBSG
+      ScalingConfiguration:
+        AutoPause: true
+        MinCapacity: !Ref MinimumAuroraCapacityUnit
+        MaxCapacity: !Ref MaximumAuroraCapacityUnit
+        SecondsUntilAutoPause: 1000
 
   #EFS Resources
   EFSSecurityGroup:
@@ -410,6 +425,7 @@ Resources:
         Statement:
           - Effect: "Allow"
             Action:
+              - elasticfilesystem:ClientMount
               - elasticfilesystem:ClientRootAccess
               - elasticfilesystem:ClientWrite
             Principal:
@@ -444,6 +460,9 @@ Resources:
           - Key: "Name"
             Value: "sites"
         FileSystemId: !Ref EFSFileSystem
+        PosixUser:
+          Uid: "33"
+          Gid: "33"
         RootDirectory:
           CreationInfo:
             OwnerGid: "33"
@@ -457,6 +476,9 @@ Resources:
           - Key: "Name"
             Value: "modules"    
         FileSystemId: !Ref EFSFileSystem
+        PosixUser:
+          Uid: "33"
+          Gid: "33"
         RootDirectory:
           CreationInfo:
             OwnerGid: "33"
@@ -470,6 +492,9 @@ Resources:
           - Key: "Name"
             Value: "themes"   
         FileSystemId: !Ref EFSFileSystem
+        PosixUser:
+          Uid: "33"
+          Gid: "33"
         RootDirectory:
           CreationInfo:
             OwnerGid: "33"
@@ -483,6 +508,9 @@ Resources:
           - Key: "Name"
             Value: "profiles"     
         FileSystemId: !Ref EFSFileSystem
+        PosixUser:
+          Uid: "33"
+          Gid: "33"        
         RootDirectory:
           CreationInfo:
             OwnerGid: "33"
@@ -529,7 +557,8 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: 
-                 - elasticfilesystem:ClientRootAccess
+                 - elasticfilesystem:ClientMount
+                 - elasticfilesystem:ClientRootAccess                 
                  - elasticfilesystem:ClientWrite
                 Resource: '*'
               
@@ -782,3 +811,4 @@ Outputs:
     Description: "DB endpoint"
     Value: 
       !GetAtt DrupalDB.Endpoint.Address
+
