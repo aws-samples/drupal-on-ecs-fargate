@@ -168,7 +168,7 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [ 0, !GetAZs '' ]
       CidrBlock: !Ref PublicSubnet1CIDR
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
@@ -179,7 +179,7 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [ 1, !GetAZs  '' ]
       CidrBlock: !Ref PublicSubnet2CIDR
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
@@ -190,7 +190,7 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [ 2, !GetAZs  '' ]
       CidrBlock: !Ref PublicSubnet3CIDR
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName} Public Subnet (AZ3)
@@ -377,12 +377,19 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Enable DB access via port 3306"
-      GroupName: "Drupal DB SG"
+      #GroupName: "Drupal DB SG"
       SecurityGroupIngress:
         - CidrIp: !Ref VpcCIDR
           IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
+          Description: "Provide DB access via port 3306"
+      SecurityGroupEgress:
+        - CidrIp: !Ref VpcCIDR
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          Description: "Provide DB access via port 3306"
       VpcId: !Ref VPC
 
   DrupalDB:
@@ -395,6 +402,7 @@ Resources:
       EngineMode: serverless
       MasterUsername: !Ref DBAdminUsername
       MasterUserPassword: !Ref DBPassword
+      StorageEncrypted: true
       VpcSecurityGroupIds:
         - !Ref DrupalDBSG
       ScalingConfiguration:
@@ -408,12 +416,19 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Enable EFS access via port 2049"
-      GroupName: "Drupal EFS SG"
+      #GroupName: "Drupal EFS SG"
       SecurityGroupIngress:
         - CidrIp: !Ref VpcCIDR
           IpProtocol: tcp
           FromPort: 2049
           ToPort: 2049
+          Description: "For enabling EFS access"
+      SecurityGroupEgress:
+        - CidrIp: !Ref VpcCIDR
+          IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          Description: "For enabling EFS access"
       VpcId: !Ref VPC
   EFSFileSystem:
     Type: AWS::EFS::FileSystem
@@ -530,7 +545,7 @@ Resources:
   ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['-', [!Ref ClusterName, ExecutionRole]]
+      #RoleName: !Join ['-', [!Ref ClusterName, ExecutionRole]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -543,7 +558,7 @@ Resources:
   ECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['-',[!Ref ClusterName, TaskRole]]
+      #RoleName: !Join ['-',[!Ref ClusterName, TaskRole]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -566,7 +581,7 @@ Resources:
   AutoScalingRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['', [!Ref ClusterName, AutoScalingRole]]
+      #RoleName: !Join ['', [!Ref ClusterName, AutoScalingRole]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -662,7 +677,7 @@ Resources:
   loadbalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Join ['-', [!Ref ClusterName, LoadBalancer]]
+      #Name: !Join ['-', [!Ref ClusterName, LoadBalancer]]
       Scheme: internet-facing
       SecurityGroups:
         - !Ref albsecuritygroup
@@ -670,7 +685,6 @@ Resources:
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
         - !Ref PublicSubnet3
-
 
   containersecuritygroup:
     Type: AWS::EC2::SecurityGroup
@@ -682,6 +696,13 @@ Resources:
           FromPort: 80
           ToPort: 80
           SourceSecurityGroupId: !Ref albsecuritygroup
+          Description: "Container security group Ingress rule"
+      SecurityGroupEgress:
+        - CidrIp: !Ref VpcCIDR
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          Description: "Container security group Egress rule"
   albsecuritygroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -692,10 +713,18 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+          Description: "ALB security group Ingress rule"
+      SecurityGroupEgress:
+        - CidrIp: !Ref VpcCIDR
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          Description: "ALB security group Egress"
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Join ['', [/ecs/, !Ref ClusterName, taskdefinition]]
+      RetentionInDays: 30
 
   taskdefinition: 
     Type: AWS::ECS::TaskDefinition
