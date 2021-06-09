@@ -700,8 +700,8 @@ Resources:
       SecurityGroupEgress:
         - CidrIp: 0.0.0.0/0
           IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
+          FromPort: 0
+          ToPort: 65535
           Description: "Container security group Egress rule"
   albsecuritygroup:
     Type: AWS::EC2::SecurityGroup
