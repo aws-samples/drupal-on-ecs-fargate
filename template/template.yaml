@@ -698,10 +698,10 @@ Resources:
           SourceSecurityGroupId: !Ref albsecuritygroup
           Description: "Container security group Ingress rule"
       SecurityGroupEgress:
-        - CidrIp: !Ref VpcCIDR
+        - CidrIp: 0.0.0.0/0
           IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: 443
+          ToPort: 443
           Description: "Container security group Egress rule"
   albsecuritygroup:
     Type: AWS::EC2::SecurityGroup
