@@ -136,6 +136,55 @@ Rules:
 Conditions:
   IsProvisioned:
     !Equals [ !Ref ThroughputMode, provisioned ]
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      "elbAcc" : "127311923021"
+    us-east-2:
+      "elbAcc" : "033677994240"
+    us-west-1:
+      "elbAcc" : "027434742980"
+    us-west-2:
+      "elbAcc" : "797873946194"
+    af-south-1:
+      "elbAcc" : "098369216593"
+    ca-central-1:
+      "elbAcc" : "985666609251"
+    eu-central-1:
+      "elbAcc" : "054676820928"
+    eu-west-1:
+      "elbAcc" : "156460612806"
+    eu-west-2:
+      "elbAcc" : "652711504416"
+    eu-south-1:
+      "elbAcc" : "635631232127"
+    eu-west-3:
+      "elbAcc" : "009996457667"
+    eu-north-1:
+      "elbAcc" : "897822967062"
+    ap-east-1:
+      "elbAcc" : "754344448648"
+    ap-northeast-1:
+      "elbAcc" : "582318560864"
+    ap-northeast-2:
+      "elbAcc" : "600734575887"
+    ap-northeast-3:
+      "elbAcc" : "383597477331"
+    ap-southeast-1:
+      "elbAcc" : "114774131450"
+    ap-southeast-2:
+      "elbAcc" : "783225319266"
+    ap-south-1:
+      "elbAcc" : "718504428378"
+    me-south-1:
+      "elbAcc" : "076674570225"
+    sa-east-1:
+      "elbAcc" : "507241528517"
+    us-gov-west-1:
+      "elbAcc" : "048591011584"
+    us-gov-east-1:
+      "elbAcc" : "190560391635"
   
 Resources:
   #VPC resources
@@ -148,7 +197,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Ref EnvironmentName
-
+  vpcFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      LogDestination: !Join ['/',[!GetAtt loadbalancerLogBucket.Arn,vpcflowlogs]]
+      LogDestinationType: s3
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: REJECT
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -447,7 +503,7 @@ Resources:
                 AWS: !GetAtt ECSTaskRole.Arn
       ProvisionedThroughputInMibps: !If [ IsProvisioned, !Ref EfsProvisionedThroughputInMibps, !Ref 'AWS::NoValue' ]
       ThroughputMode: !Ref ThroughputMode
-      FileSystemTags:
+      Tags:
         - Key: Name
           Value: !Ref ClusterName
   MountTargetPrivateSubnet1:
@@ -558,7 +614,7 @@ Resources:
   ECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: !Join ['-',[!Ref ClusterName, TaskRole]]
+      #RoleName: !Join ['-',[!Ref ClusterName, TaskRole,!Ref AWS::Region]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -576,6 +632,9 @@ Resources:
                  - elasticfilesystem:ClientRootAccess                 
                  - elasticfilesystem:ClientWrite
                 Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:TagKeys/Name': !Ref ClusterName
               
       
   AutoScalingRole:
@@ -674,10 +733,68 @@ Resources:
       Port: 80
       Protocol: HTTP
 
+  loadbalancerLogBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join
+        - '-'
+        - - !Ref ClusterName
+          - 'loadbalancer'
+          - 'logs'
+          - !Ref 'AWS::Region'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  
+  loadbalancerLogBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref loadbalancerLogBucket
+      PolicyDocument:
+        Statement:
+          - Action: 's3:PutObject'
+            Effect: 'Allow'
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref loadbalancerLogBucket
+                - /*
+            Principal: 
+              AWS: !Join
+                - ''
+                - - 'arn:aws:iam::'
+                  - !FindInMap [RegionMap, !Ref "AWS::Region", elbAcc]
+                  - ':root'
+          - Action: 's3:PutObject'
+            Effect: 'Allow'
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref loadbalancerLogBucket
+                - /*
+            Principal:
+              Service: delivery.logs.amazonaws.com
+          - Action: 's3:GetBucketAcl'
+            Effect: 'Allow'
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref loadbalancerLogBucket
+            Principal:
+              Service: delivery.logs.amazonaws.com
+              
+
+
   loadbalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       #Name: !Join ['-', [!Ref ClusterName, LoadBalancer]]
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref loadbalancerLogBucket
       Scheme: internet-facing
       SecurityGroups:
         - !Ref albsecuritygroup
@@ -700,9 +817,32 @@ Resources:
       SecurityGroupEgress:
         - CidrIp: 0.0.0.0/0
           IpProtocol: tcp
-          FromPort: 0
-          ToPort: 65535
+          FromPort: 443
+          ToPort: 443
           Description: "Container security group Egress rule"
+  
+  containersecuritygroupEgressRuleEFS:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: 
+      CidrIp: !Ref VpcCIDR
+      Description: Container security group egress rule to access the EFS resources. 
+      FromPort: 2049
+      IpProtocol: tcp
+      ToPort: 2049
+      GroupId: !Ref containersecuritygroup
+  containersecuritygroupEgressRuleAurora:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: 
+      CidrIp: !Ref VpcCIDR
+      Description: Container security group egress rule to access the EFS resources. 
+      FromPort: 3306
+      IpProtocol: tcp
+      ToPort: 3306
+      GroupId: !Ref containersecuritygroup
+
+
+
+
   albsecuritygroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -720,11 +860,56 @@ Resources:
           FromPort: 80
           ToPort: 80
           Description: "ALB security group Egress"
+
+  loggroupKmskey:
+    Type: AWS::KMS::Key
+    Properties: 
+      Description: KMS key to encrypt the CloudWatch LogGroup
+      Enabled: true
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS: !Join ['',['arn:aws:iam::',!Ref AWS::AccountId,':root']]
+          Action: kms:*
+          Resource: '*'
+        - Sid: Enabled CloudWatch to access KMS
+          Effect: Allow
+          Principal:
+            Service: !Join ['',['logs.',!Ref AWS::Region,'.amazonaws.com']]
+          Action:
+            - kms:Encrypt*
+            - kms:Decrypt*
+            - kms:ReEncrypt*
+            - kms:GenerateDataKey*
+            - kms:Describe*
+          Resource: '*'
+        - Sid: Allow ELB logs to be sent to S3
+          Effect: Allow
+          Principal:
+            Service: delivery.logs.amazonaws.com
+          Action:
+            - kms:Encrypt*
+            - kms:Decrypt*
+            - kms:ReEncrypt*
+            - kms:GenerateDataKey*
+            - kms:Describe*
+          Resource: '*'
+
+      #KeySpec: String
+      #KeyUsage: String
+      PendingWindowInDays: 7
+
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Join ['', [/ecs/, !Ref ClusterName, taskdefinition]]
       RetentionInDays: 30
+      KmsKeyId: !GetAtt loggroupKmskey.Arn
 
   taskdefinition: 
     Type: AWS::ECS::TaskDefinition
