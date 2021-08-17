@@ -946,7 +946,7 @@ Resources:
               Condition: "COMPLETE"
               ContainerName: "initcontainer"
           Essential: true
-          Image: "drupal:8-apache"
+          Image: !Ref Image
           MountPoints:
             -
               ContainerPath: "/var/www/html/modules/"
