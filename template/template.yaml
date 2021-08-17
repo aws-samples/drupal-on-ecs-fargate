@@ -503,7 +503,7 @@ Resources:
                 AWS: !GetAtt ECSTaskRole.Arn
       ProvisionedThroughputInMibps: !If [ IsProvisioned, !Ref EfsProvisionedThroughputInMibps, !Ref 'AWS::NoValue' ]
       ThroughputMode: !Ref ThroughputMode
-      Tags:
+      FileSystemTags:
         - Key: Name
           Value: !Ref ClusterName
   MountTargetPrivateSubnet1:
@@ -741,6 +741,7 @@ Resources:
         - - !Ref ClusterName
           - 'loadbalancer'
           - 'logs'
+          - !Ref 'AWS::AccountId'
           - !Ref 'AWS::Region'
       BucketEncryption:
         ServerSideEncryptionConfiguration:
